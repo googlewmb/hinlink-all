@@ -103,45 +103,116 @@ jobs:
           git clone --depth 1 -b "${REPO_BRANCH}" "${REPO_URL}" openwrt
           echo "官方源码 commit: $(git -C openwrt rev-parse --short HEAD)"
 
-      # ========== 2. 自动注入 Beaverfffan 适配层 ==========
+      # ========== 2. 自动注入 Beaverfffan 适配层（含完整 U-Boot）==========
       - name: 注入 Beaverfffan 适配层
         run: |
+          set -e
           echo "正在拉取 Beaverfffan 适配层..."
           git clone --depth 1 https://github.com/Beaverfffan/immortalwrt-hinlink.git hinlink-adapt
 
-          # 设备树 + 板级文件
+          # ---------- 2.1 设备树 + 板级文件 ----------
+          echo ">>> 复制 DTS / board.d / 其他 rockchip 文件"
           cp -rf hinlink-adapt/target/linux/rockchip/* openwrt/target/linux/rockchip/
 
-          # 自定义包（风扇 / OLED / 5G复位 / aic8800 等）
+          # ---------- 2.2 自定义包（风扇 / OLED / 5G复位 / aic8800 等）----------
+          echo ">>> 复制 package/beaverfffan"
           mkdir -p openwrt/package/beaverfffan
           cp -rf hinlink-adapt/package/beaverfffan/* openwrt/package/beaverfffan/
 
-          # 内核 patch
+          # ---------- 2.3 内核 patch ----------
+          echo ">>> 复制内核 patch"
           if [ -d hinlink-adapt/patches ]; then
             mkdir -p openwrt/target/linux/rockchip/patches-6.18
             cp -f hinlink-adapt/patches/*.patch openwrt/target/linux/rockchip/patches-6.18/ 2>/dev/null || true
           fi
 
-          # U-Boot patch
-          if [ -d hinlink-adapt/patches-uboot ]; then
-            mkdir -p openwrt/package/boot/uboot-rockchip/patches
-            cp -f hinlink-adapt/patches-uboot/upstream/*.patch openwrt/package/boot/uboot-rockchip/patches/ 2>/dev/null || true
+          # ---------- 2.4 U-Boot（严格按官方 README）----------
+          echo ">>> 注入 U-Boot 支持（出固件必需）"
+          UBOOT_PKG="openwrt/package/boot/uboot-rockchip"
+          mkdir -p "${UBOOT_PKG}/patches"
 
-            if ls hinlink-adapt/patches-uboot/*.patch 1>/dev/null 2>&1; then
-              for p in hinlink-adapt/patches-uboot/*.patch; do
-                patch -p1 -d openwrt/package/boot/uboot-rockchip < "$p" || true
-              done
+          # 2.4.1 上游已有的 H28K / H66K / H68K 补丁
+          if [ -d hinlink-adapt/patches-uboot/upstream ]; then
+            echo "  - 复制 upstream/*.patch"
+            cp -f hinlink-adapt/patches-uboot/upstream/*.patch "${UBOOT_PKG}/patches/" 2>/dev/null || true
+          fi
+
+          # 2.4.2 登记 8 个变体到 Makefile（0001-register-hinlink-devices.patch）
+          if ls hinlink-adapt/patches-uboot/0001-*.patch 1>/dev/null 2>&1; then
+            echo "  - 应用 0001-register-hinlink-devices.patch"
+            for p in hinlink-adapt/patches-uboot/0001-*.patch; do
+              echo "    patch: $p"
+              patch -p1 -d "${UBOOT_PKG}" < "$p" || {
+                echo "    警告: $p 应用失败，尝试继续..."
+              }
+            done
+          fi
+
+          # 2.4.3 H29K / HT2（108）
+          if ls hinlink-adapt/patches-uboot/108-*.patch 1>/dev/null 2>&1; then
+            echo "  - 应用 108 (H29K/HT2)"
+            for p in hinlink-adapt/patches-uboot/108-*.patch; do
+              echo "    patch: $p"
+              # 这类补丁可能是对整个 uboot-rockchip 包，或对 patches 目录
+              if grep -q '^diff --git a/patches/' "$p" 2>/dev/null || grep -q '^--- a/patches/' "$p" 2>/dev/null; then
+                patch -p1 -d "${UBOOT_PKG}" < "$p" || true
+              else
+                # 也可能是直接往 patches 里加文件，先尝试复制
+                cp -f "$p" "${UBOOT_PKG}/patches/" 2>/dev/null || \
+                patch -p1 -d "${UBOOT_PKG}" < "$p" || true
+              fi
+            done
+          fi
+
+          # 2.4.4 H88K / H89K（109）
+          if ls hinlink-adapt/patches-uboot/109-*.patch 1>/dev/null 2>&1; then
+            echo "  - 应用 109 (H88K/H89K)"
+            for p in hinlink-adapt/patches-uboot/109-*.patch; do
+              echo "    patch: $p"
+              if grep -q '^diff --git a/patches/' "$p" 2>/dev/null || grep -q '^--- a/patches/' "$p" 2>/dev/null; then
+                patch -p1 -d "${UBOOT_PKG}" < "$p" || true
+              else
+                cp -f "$p" "${UBOOT_PKG}/patches/" 2>/dev/null || \
+                patch -p1 -d "${UBOOT_PKG}" < "$p" || true
+              fi
+            done
+          fi
+
+          # 2.4.5 其余根目录下的 .patch（兜底）
+          for p in hinlink-adapt/patches-uboot/*.patch; do
+            [ -f "$p" ] || continue
+            base=$(basename "$p")
+            case "$base" in
+              0001-*|108-*|109-*) continue ;;  # 已处理
+              *)
+                echo "  - 兜底应用: $base"
+                patch -p1 -d "${UBOOT_PKG}" < "$p" 2>/dev/null || \
+                cp -f "$p" "${UBOOT_PKG}/patches/" 2>/dev/null || true
+                ;;
+            esac
+          done
+
+          # 列出最终 U-Boot patches，方便排查
+          echo ">>> 当前 uboot-rockchip/patches 列表:"
+          ls -1 "${UBOOT_PKG}/patches/" 2>/dev/null || echo "(空)"
+
+          # ---------- 2.5 追加设备定义（armv8.mk）----------
+          echo ">>> 追加 armv8.mk.hinlink"
+          if [ -f hinlink-adapt/target/linux/rockchip/image/armv8.mk.hinlink ]; then
+            # 避免重复追加
+            if ! grep -q 'hinlink_h28k\|Device/hinlink' openwrt/target/linux/rockchip/image/armv8.mk 2>/dev/null; then
+              cat hinlink-adapt/target/linux/rockchip/image/armv8.mk.hinlink \
+                >> openwrt/target/linux/rockchip/image/armv8.mk
+            else
+              echo "  armv8.mk 已包含 hinlink 定义，跳过追加"
             fi
           fi
 
-          # 追加设备定义（armv8.mk）
-          if [ -f hinlink-adapt/target/linux/rockchip/image/armv8.mk.hinlink ]; then
-            cat hinlink-adapt/target/linux/rockchip/image/armv8.mk.hinlink \
-              >> openwrt/target/linux/rockchip/image/armv8.mk
-          fi
-
-          echo "适配层注入完成"
-          ls openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ | grep -i hinlink || echo "（提示：DTS 可能已在官方源码中）"
+          echo "========== 适配层注入完成 =========="
+          echo "DTS 中的 hinlink 文件:"
+          ls openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null | grep -i hinlink || echo "(无)"
+          echo "U-Boot Makefile 中 hinlink 相关行:"
+          grep -n 'hinlink' "${UBOOT_PKG}/Makefile" 2>/dev/null | head -20 || echo "(未找到，可能 0001 未成功应用)"
 
       # ========== 3. 执行 diy-part1 ==========
       - name: 执行DIY_P1_SH
@@ -156,10 +227,10 @@ jobs:
         run: |
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          # 再次确保冲突包被卸载
+          # 再次确保冲突包被卸载（使用 beaverfffan 自己的）
           ./scripts/feeds uninstall fancontrol luci-app-fancontrol luci-app-oled 2>/dev/null || true
 
-      # ========== 5. 加载机型配置 + diy-part3 ==========
+      # ========== 5. 加载机型配置 + diy-part3 + 强制 U-Boot ==========
       - name: 加载config 执行DIY_P2_SH defconfig
         run: |
           if [ -e "${CONFIG_BUILD}" ]; then
@@ -174,7 +245,40 @@ jobs:
           chmod +x "${GITHUB_WORKSPACE}/${DIY_P2_SH}"
           cd openwrt
           "${GITHUB_WORKSPACE}/${DIY_P2_SH}"
+
+          # 根据当前机型强制打开对应 U-Boot 包（解决镜像打包找不到 .bin 的问题）
+          CFG="${{ matrix.config }}"
+          case "$CFG" in
+            h28k.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h28k-rk3528=y" >> .config
+              ;;
+            h29k-v1.3-1.14.config|h29k-v5-1.14.config|h29k-v5-1.49.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h29k-rk3528=y" >> .config
+              ;;
+            ht2.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-ht2-rk3528=y" >> .config
+              ;;
+            h66k.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h66k-rk3568=y" >> .config
+              ;;
+            h68k-a-b.config|h68k-a-b-usb.config|h68k-c-d-f.config|h68k-c-d-f-usb.config|h68k-new.config|h69k.config|h69k-mini.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h68k-rk3568=y" >> .config
+              ;;
+            h88k-v2.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h88k-v2-rk3588=y" >> .config
+              ;;
+            h88k-v3.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h88k-v3-rk3588=y" >> .config
+              ;;
+            h89k.config)
+              echo "CONFIG_PACKAGE_uboot-rockchip-hinlink-h89k-rk3588=y" >> .config
+              ;;
+          esac
+
           make defconfig
+
+          echo ">>> 当前启用的 u-boot 相关配置:"
+          grep -E 'CONFIG_PACKAGE_uboot|CONFIG_TARGET_.*uboot' .config || true
 
       # ========== 仅输出配置模式 ==========
       - name: 仅输出完整配置
