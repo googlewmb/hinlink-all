@@ -20,7 +20,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          repository: googlewmb/hinlink-all
           fetch-depth: 0
 
       - name: Update and preview configs
@@ -34,7 +33,8 @@ jobs:
           import difflib
           from pathlib import Path
 
-          ROOT = Path("hinlink-all")
+          # 正确路径：仓库根目录下的 configs/
+          ROOT = Path("configs")
           EXPECTED_CONFIG_COUNT = 16
           DRY_RUN = os.environ.get("DRY_RUN", "true").lower() == "true"
 
@@ -68,7 +68,7 @@ jobs:
           }
 
           if not ROOT.is_dir():
-              sys.exit("错误：找不到 hinlink-all/ 目录。")
+              sys.exit("错误：找不到 configs/ 目录。")
 
           # 只选择普通 .config，排除所有 .config.full.config
           files = sorted(
@@ -77,6 +77,7 @@ jobs:
               and not p.name.endswith(".config.full.config")
           )
 
+          print(f"配置目录：{ROOT}")
           print(f"发现普通配置文件：{len(files)} 个")
           print(f"运行模式：{'仅预览' if DRY_RUN else '实际修改'}")
 
@@ -222,13 +223,13 @@ jobs:
               path = Path(filename)
 
               if (
-                  not filename.startswith("hinlink-all/")
+                  not filename.startswith("configs/")
                   or not path.name.endswith(".config")
                   or path.name.endswith(".config.full.config")
               ):
                   sys.exit(f"安全检查失败：禁止修改此文件：{filename}")
 
-          print(f"安全检查通过：仅涉及 {len(changed)} 个普通 .config 文件。")
+          print(f"安全检查通过：仅涉及 {len(changed)} 个 configs/ 下的普通 .config 文件。")
           PY
 
       - name: Commit and push
