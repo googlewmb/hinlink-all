@@ -21,11 +21,11 @@ on:
 
 env:
   OPENWRT_NAME: ImmortalWrt
-  REPO: googlewmb/Rockchip-H68K
+  REPO: googlewmb/hinlink-all
   REPO_URL: https://github.com/immortalwrt/immortalwrt
   REPO_BRANCH: ${{ github.event.inputs.source_ref || 'master' }}
-  DIY_P1_SH: hinlink-all/diy-part1.sh
-  DIY_P2_SH: hinlink-all/diy-part3.sh
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part3.sh
   UPLOAD_BIN: true
   UPLOAD_FIRMWARE: true
   UPLOAD_RELEASE: true
@@ -55,7 +55,7 @@ jobs:
       fail-fast: false
 
     env:
-      CONFIG_BUILD: hinlink-all/configs/${{ matrix.config }}
+      CONFIG_BUILD: configs/${{ matrix.config }}
       BUILD_CONFIG_ONLY: ${{ github.event.inputs.BUILD_CONFIG_ONLY || 'false' }}
 
     runs-on: ubuntu-latest
@@ -127,7 +127,6 @@ jobs:
             mkdir -p openwrt/package/boot/uboot-rockchip/patches
             cp -f hinlink-adapt/patches-uboot/upstream/*.patch openwrt/package/boot/uboot-rockchip/patches/ 2>/dev/null || true
 
-            # 如有额外补丁
             if ls hinlink-adapt/patches-uboot/*.patch 1>/dev/null 2>&1; then
               for p in hinlink-adapt/patches-uboot/*.patch; do
                 patch -p1 -d openwrt/package/boot/uboot-rockchip < "$p" || true
@@ -168,6 +167,7 @@ jobs:
             echo "已加载配置: ${CONFIG_BUILD}"
           else
             echo "错误：找不到配置文件 ${CONFIG_BUILD}"
+            ls -la configs/ || true
             exit 1
           fi
 
@@ -296,7 +296,7 @@ jobs:
           tag_name: ${{ env.date2 }}-${{ matrix.config }}
           body_path: release.txt
 
-      # ========== 回写完整配置到仓库 ==========
+      # ========== 回写完整配置到本仓库 ==========
       - name: config文件上传自动更新1
         run: |
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -309,12 +309,12 @@ jobs:
 
       - name: config文件上传自动更新3
         run: |
-          mkdir -p "${GITHUB_WORKSPACE}/main/hinlink-all"
+          mkdir -p "${GITHUB_WORKSPACE}/main/configs"
           cp ./openwrt/.config \
-            "${GITHUB_WORKSPACE}/main/hinlink-all/${{ matrix.config }}.full.config"
+            "${GITHUB_WORKSPACE}/main/configs/${{ matrix.config }}.full.config"
 
           cd "$GITHUB_WORKSPACE/main"
-          git add "hinlink-all/${{ matrix.config }}.full.config"
+          git add "configs/${{ matrix.config }}.full.config"
 
           if git diff --cached --quiet; then
             echo "nothing to commit"
