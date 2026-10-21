@@ -42,7 +42,6 @@ jobs:
           ENABLE_PACKAGES = [
               "luci-app-openclash",
               "luci-app-autoreboot",
-              "luci-app-smartdns",
               "luci-app-mini-diskmanager",
               "luci-app-natmapt",
               "luci-app-partexp",
@@ -54,6 +53,11 @@ jobs:
               "luci-app-passwall",
               "luci-app-ttyd",
               "luci-app-lucky",
+          ]
+
+          # 明确关闭 SmartDNS
+          DISABLE_PACKAGES = [
+              "luci-app-smartdns",
           ]
 
           # 非软件包配置项及插件子选项
@@ -127,6 +131,10 @@ jobs:
               **{
                   f"CONFIG_PACKAGE_{name}": "y"
                   for name in ENABLE_PACKAGES
+              },
+              **{
+                  f"CONFIG_PACKAGE_{name}": "n"
+                  for name in DISABLE_PACKAGES
               },
               **ENABLE_OPTIONS,
           }
