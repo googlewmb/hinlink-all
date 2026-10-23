@@ -53,10 +53,6 @@ jobs:
               "luci-app-passwall",
               "luci-app-ttyd",
               "luci-app-lucky",
-          ]
-
-          # 明确关闭 SmartDNS
-          DISABLE_PACKAGES = [
               "luci-app-smartdns",
           ]
 
@@ -132,10 +128,6 @@ jobs:
               **{
                   f"CONFIG_PACKAGE_{name}": "y"
                   for name in ENABLE_PACKAGES
-              },
-              **{
-                  f"CONFIG_PACKAGE_{name}": "n"
-                  for name in DISABLE_PACKAGES
               },
               **ENABLE_OPTIONS,
           }
