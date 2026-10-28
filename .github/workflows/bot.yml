@@ -51,6 +51,7 @@ jobs:
               "autosamba",
               "luci-app-cpufreq",
               "luci-app-passwall",
+              "luci-app-rtp2httpd",
               "luci-app-ttyd",
               "luci-app-lucky",
               "luci-app-smartdns",
