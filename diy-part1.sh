@@ -1,3 +1,4 @@
+
 #!/bin/bash
 set -e
 #
@@ -154,6 +155,60 @@ passwall
 #git clone -b main --depth 1 \
 #https://github.com/Openwrt-Passwall/openwrt-passwall2.git \
 #passwall2
+
+###############################################################################
+# VIKINGYFY UPnP
+# 替换源码自带的 luci-app-upnp 和 miniupnpd
+# 不添加 VIKINGYFY feed，直接使用 package/myapp 独立源码
+###############################################################################
+
+echo
+echo "========================================"
+echo "下载 VIKINGYFY UPnP"
+echo "========================================"
+
+git clone -b main --depth 1 \
+https://github.com/VIKINGYFY/packages.git \
+vikingyfy-packages
+
+# 检查源码目录
+if [ ! -f vikingyfy-packages/luci-app-upnp/Makefile ]; then
+    echo "ERROR: VIKINGYFY luci-app-upnp Makefile 不存在"
+    exit 1
+fi
+
+if [ ! -f vikingyfy-packages/miniupnpd/Makefile ]; then
+    echo "ERROR: VIKINGYFY miniupnpd Makefile 不存在"
+    exit 1
+fi
+
+# 检查目标目录，拒绝覆盖
+for pkg in luci-app-upnp miniupnpd; do
+    if [ -e "$pkg" ] || [ -L "$pkg" ]; then
+        echo "ERROR: 目标目录已存在，拒绝覆盖: package/myapp/$pkg"
+        exit 1
+    fi
+done
+
+# 复制两个完整软件包到 package/myapp
+cp -a vikingyfy-packages/luci-app-upnp \
+    ./luci-app-upnp
+
+cp -a vikingyfy-packages/miniupnpd \
+    ./miniupnpd
+
+# 删除临时仓库，避免重复扫描
+rm -rf vikingyfy-packages
+
+# 检查两个软件包版本
+echo
+echo "VIKINGYFY UPnP 版本信息："
+
+grep -E 'PKG_NAME|PKG_VERSION|PKG_RELEASE' \
+    ./luci-app-upnp/Makefile \
+    ./miniupnpd/Makefile
+
+echo "VIKINGYFY UPnP 下载完成"
 
 cd ../..
 
