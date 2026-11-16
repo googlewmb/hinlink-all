@@ -51,6 +51,12 @@ echo "更新并安装新依赖索引..."
 ./scripts/feeds install -a
 
 
+
+
+# 删除官方过时的 fullcone 补丁（当前官方防火墙已内置 fullcone）
+rm -f package/network/config/firewall4/patches/001-firewall4-add-support-for-fullcone-nat.patch
+
+
 ###############################################################################
 # 2. 第三方依赖预处理 (明确要求的移除项)
 ###############################################################################
